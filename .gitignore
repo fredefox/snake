@@ -1,0 +1,5 @@
+*.o
+*.hi
+dist/
+bin/
+.cabal-sandbox/
