@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Main where
 
 import Prelude hiding (Left, Right)
@@ -5,6 +6,9 @@ import System.Random (randomRIO)
 import Data.List ((\\))
 import Control.Monad
 import System.Exit
+import UI.NCurses
+import Control.Monad
+import Control.Monad.IO.Class
 
 type Point = (Int, Int)
 
@@ -15,24 +19,51 @@ data World = World
     }
 
 main :: IO ()
-main = go initialWorld where
-    go w = game w >>= go
+main = runCurses play
+
+-- Time between refresh in ms.
+speed :: Integer
+speed = 100
+
+play :: Curses ()
+play = do
+  setEcho False
+  win <- defaultWindow
+  loop win initialWorld Down
+  where
+    loop :: Window -> World -> Direction -> Curses ()
+    loop win world dir = do
+      updateWindow win $ do
+        moveCursor 0 0
+        printWorld world
+      render
+      mDir <- getDirection <$> getEvent win (Just speed)
+      let dir' = maybe dir id mDir
+      w <- modifyWorld world dir'
+      loop win w dir'
+
+getDirection :: Maybe Event -> Maybe Direction
+getDirection ev = ev >>= onlyCharEv >>= match
+  where
+    onlyCharEv = \case
+      EventCharacter c -> Just c
+      _ -> Nothing
+    match x = case x of
+        'w' -> Just Up
+        'a' -> Just Left
+        's' -> Just Down
+        'd' -> Just Right
+        _   -> Nothing
 
 initialWorld :: World
 initialWorld = World
-    { size = (3, 3)
+    { size = (10, 10)
     , food = (2, 2)
     , snake = [(x, 0) | x <- [0..2]]
     }
 
-game :: World -> IO World
-game w = do
-    printWorld w
-    mDir <- getInput
-    maybe (return w) (modifyWorld w) mDir
-
-printWorld :: World -> IO ()
-printWorld = putStrLn . worldToStr
+printWorld :: World -> Update ()
+printWorld = drawString . worldToStr
 
 rowToStr   :: World -> Int -> String
 rowToStr w j = [chrAt (x, j) | x <- [0..xmax-1]] where
@@ -42,23 +73,13 @@ rowToStr w j = [chrAt (x, j) | x <- [0..xmax-1]] where
         | p     ==  food w = '%'
         | otherwise        = ' '
 
-
 worldToStr :: World -> String
 worldToStr w = unlines [rowToStr w y | y <- [0..ymax-1]] where
     (_, ymax) = size w
 
-getInput :: IO (Maybe Direction)
-getInput = match `fmap` getChar where
-    match x = case x of
-        'w' -> Just Up
-        'a' -> Just Left
-        's' -> Just Down
-        'd' -> Just Right
-        _   -> Nothing
-
 data Direction = Up | Left | Down | Right
 
-modifyWorld :: World -> Direction -> IO World
+modifyWorld :: MonadIO m => World -> Direction -> m World
 modifyWorld w d = do
     newWorld <- getNewWorld
     blarg newWorld where
@@ -84,13 +105,13 @@ modifyWorld w d = do
     theSnake = snake w
     foodEaten = newHead == food w
 
-gameOver :: IO a
-gameOver = putStrLn "Game over" >> exitSuccess
+gameOver :: MonadIO m => m a
+gameOver = liftIO $ putStrLn "Game over" >> exitSuccess
 
 emptySpots :: World -> [Point]
 emptySpots w = allPoints \\ snake w where
     allPoints = [(x, y) | x <- [0..xmax-1], y <- [0..ymax-1]]
     (xmax, ymax) = size w
 
-choice :: [a] -> IO a
-choice xs = (xs !!) `liftM` randomRIO (0, length xs - 1)
+choice :: MonadIO m => [a] -> m a
+choice xs = liftIO $ (xs !!) `liftM` randomRIO (0, length xs - 1)
