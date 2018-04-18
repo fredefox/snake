@@ -1,3 +1,5 @@
+module Main where
+
 import Prelude hiding (Left, Right)
 import System.Random (randomRIO)
 import Data.List ((\\))
